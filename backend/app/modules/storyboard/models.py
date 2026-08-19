@@ -37,6 +37,8 @@ class Storyboard(Base):
 
     # Metadata
     duration_seconds: Mapped[float] = mapped_column(Integer, default=5, nullable=False)
+    narration: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    characters_json: Mapped[str] = mapped_column(String(500), default="", nullable=False)  # JSON list
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

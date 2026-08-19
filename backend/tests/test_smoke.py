@@ -19,6 +19,11 @@ async def client():
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
+    # ASGITransport doesn't run lifespan; register providers explicitly
+    from app.providers.registry import register_all_providers
+
+    register_all_providers()
+
     from app.main import create_app
 
     app = create_app()

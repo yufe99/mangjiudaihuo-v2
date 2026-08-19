@@ -48,6 +48,52 @@ SCRIPT_TEMPLATE = """{{
 }}"""
 
 
+# Fixed storyboard template for local_preview fallback.
+# Used when LLM providers fail (no key, network down, etc.).
+LOCAL_STORYBOARD_TEMPLATE = """{{
+  "shots": [
+    {{"index": 1, "title": "开篇", "characters": ["主角"], "prompt": "A cinematic medium shot of {char} standing in {scene}, looking ahead with determination. Soft natural light, depth of field, 35mm film look.", "narration": "这是{title}的开始,{char}踏上了新的旅程。", "duration": 5}},
+    {{"index": 2, "title": "冲突", "characters": ["主角", "配角"], "prompt": "Over-the-shoulder two-shot of {char} and another character in tense conversation. Slightly low angle, dramatic lighting.", "narration": "面对突如其来的挑战,{char}必须做出选择。", "duration": 5}},
+    {{"index": 3, "title": "转折", "characters": ["主角"], "prompt": "Close-up portrait of {char}'s face showing emotional change. Warm golden hour light, shallow depth of field.", "narration": "内心翻涌,决定已下,故事将走向新的方向。", "duration": 5}}
+  ]
+}}"""
+
+
+# ===== Script generation =====
+
+
+def _build_local_script(title: str = "示例短剧") -> str:
+    return SCRIPT_TEMPLATE.format(
+        title=title,
+        主角="年轻人",
+        场景="现代都市",
+        核心冲突="追寻自我价值",
+        style="现代都市",
+        年龄="25",
+        身份="上班族",
+        性格1="内敛",
+        性格2="渴望突破",
+        服饰="休闲商务",
+        表情1="坚毅",
+        配角类型="亦敌亦友的同事",
+        光线="柔和自然光",
+    )
+
+
+def _build_local_storyboard(episode_title: str, episode_outline: str, character_names: list[str]) -> str:
+    """Render a storyboard JSON for a fallback episode."""
+    char = character_names[0] if character_names else "主角"
+    scene = "现代都市的街道" if "都" in (episode_outline or "") else "指定场景"
+    return LOCAL_STORYBOARD_TEMPLATE.format(
+        title=episode_title or "本集",
+        char=char,
+        scene=scene,
+    )
+
+
+# ===== Providers =====
+
+
 class LocalPreviewLLMProvider(LLMProvider):
     name = "local_preview"
 
@@ -65,25 +111,22 @@ class LocalPreviewLLMProvider(LLMProvider):
         temperature: float = 0.7,
         response_format: dict | None = None,
     ) -> GenerationResult:
-        # Try to extract topic from prompt (very crude)
-        m = re.search(r"主题[::]\s*(.+?)(?:[\n,。]|$)", prompt)
-        title = m.group(1).strip() if m else "示例短剧"
-
-        text = SCRIPT_TEMPLATE.format(
-            title=title,
-            主角="年轻人",
-            场景="现代都市",
-            核心冲突="追寻自我价值",
-            style="现代都市",
-            年龄="25",
-            身份="上班族",
-            性格1="内敛",
-            性格2="渴望突破",
-            服饰="休闲商务",
-            表情1="坚毅",
-            配角类型="亦敌亦友的同事",
-            光线="柔和自然光",
-        )
+        # Detect whether this is a storyboard call (by system prompt content)
+        if system and "分镜" in system:
+            # Extract episode context from prompt
+            m_title = re.search(r"集标题[:：]\s*(.+)", prompt)
+            m_outline = re.search(r"集概要[:：]\s*(.+)", prompt)
+            m_chars = re.search(r"可用角色[:：]\s*(.+)", prompt)
+            chars = [c.strip() for c in (m_chars.group(1) if m_chars else "").split("、") if c.strip()]
+            text = _build_local_storyboard(
+                episode_title=m_title.group(1).strip() if m_title else "",
+                episode_outline=m_outline.group(1).strip() if m_outline else "",
+                character_names=chars,
+            )
+        else:
+            m = re.search(r"主题[::]\s*(.+?)(?:[\n,。]|$)", prompt)
+            title = m.group(1).strip() if m else "示例短剧"
+            text = _build_local_script(title)
 
         return GenerationResult(
             success=True,

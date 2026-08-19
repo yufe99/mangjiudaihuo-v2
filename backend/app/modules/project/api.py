@@ -39,6 +39,18 @@ class ProjectUpdate(BaseModel):
     style: str | None = None
 
 
+class EpisodeSummary(BaseModel):
+    id: int
+    index: int
+    title: str
+    outline: str
+    storyboard_json: dict | None = None
+    video_status: str
+    final_video_path: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProjectResponse(BaseModel):
     id: int
     name: str
@@ -55,6 +67,7 @@ class ProjectResponse(BaseModel):
     final_video_path: str
     created_at: datetime
     updated_at: datetime
+    episodes: list[EpisodeSummary] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -84,7 +97,8 @@ async def list_projects(
     result = await db.execute(
         select(Project).where(Project.owner_id == user.id).order_by(Project.created_at.desc())
     )
-    return [ProjectResponse.model_validate(p) for p in result.scalars().all()]
+    projects = result.scalars().all()
+    return [await _project_to_response(db, p) for p in projects]
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -101,7 +115,7 @@ async def create_project(
     db.add(project)
     await db.commit()
     await db.refresh(project)
-    return ProjectResponse.model_validate(project)
+    return await _project_to_response(db, project)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -113,7 +127,7 @@ async def get_project(
     project = await db.get(Project, project_id)
     if not project or project.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Project not found")
-    return ProjectResponse.model_validate(project)
+    return await _project_to_response(db, project)
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
@@ -130,7 +144,7 @@ async def update_project(
         setattr(project, k, v)
     await db.commit()
     await db.refresh(project)
-    return ProjectResponse.model_validate(project)
+    return await _project_to_response(db, project)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -144,3 +158,35 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
     await db.delete(project)
     await db.commit()
+
+
+async def _project_to_response(db: AsyncSession, project: Project) -> ProjectResponse:
+    """Build ProjectResponse, eagerly loading episodes to avoid lazy-load errors."""
+    from app.modules.project.models import Episode
+    from sqlalchemy import select
+
+    episodes_q = (
+        await db.execute(
+            select(Episode).where(Episode.project_id == project.id).order_by(Episode.index)
+        )
+    ).scalars().all()
+    episodes = [EpisodeSummary.model_validate(e) for e in episodes_q]
+    # Build response dict directly to avoid Pydantic trying to lazy-load episodes via from_attributes
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        type=project.type,
+        style=project.style,
+        topic=project.topic,
+        product_url=project.product_url,
+        episode_count=project.episode_count,
+        seconds_per_episode=project.seconds_per_episode,
+        aspect_ratio=project.aspect_ratio,
+        characters_status=project.characters_status,
+        storyboard_status=project.storyboard_status,
+        video_status=project.video_status,
+        final_video_path=project.final_video_path,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        episodes=episodes,
+    )

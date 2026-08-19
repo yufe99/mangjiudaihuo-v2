@@ -6,6 +6,7 @@ Called once at app startup via `register_all_providers()`.
 from __future__ import annotations
 
 from app.providers.base import ProviderRegistry
+from app.providers.edge_tts import EdgeTTSProvider
 from app.providers.local_preview import (
     LocalPreviewImageProvider,
     LocalPreviewLLMProvider,
@@ -45,6 +46,6 @@ def register_all_providers() -> None:
     ProviderRegistry.register_video("local_preview", LocalPreviewVideoProvider)
 
     # TTS
-    ProviderRegistry.register_tts("edge", LocalPreviewTTSProvider)  # placeholder; real edge impl in edge.py
+    ProviderRegistry.register_tts("edge", EdgeTTSProvider)
     ProviderRegistry.register_tts("azure", LocalPreviewTTSProvider)
     ProviderRegistry.register_tts("local_preview", LocalPreviewTTSProvider)

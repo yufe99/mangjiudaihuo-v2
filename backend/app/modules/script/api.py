@@ -74,7 +74,7 @@ async def generate_script(
         product_info=project.product_detail or project.product_url,
     )
 
-    # Call LLM
+    # Call LLM with fallback to local_preview on missing key / error
     try:
         llm = ProviderRegistry.get_llm(provider_name)
     except Exception as e:
@@ -90,8 +90,16 @@ async def generate_script(
             response_format={"type": "json_object"},
         )
     except Exception as e:
-        logger.error("script_generate_failed", extra={"project_id": project_id, "error": str(e)})
-        raise HTTPException(status_code=502, detail=f"LLM call failed: {e}")
+        logger.warning("script_llm_fallback", extra={"provider": provider_name, "error": str(e)})
+        llm = ProviderRegistry.get_llm("local_preview")
+        result = await llm.generate_text(
+            prompt=user_prompt,
+            system=system,
+            config=None,
+            max_tokens=8192,
+            temperature=0.8,
+            response_format={"type": "json_object"},
+        )
 
     if not result.success or not result.text:
         raise HTTPException(status_code=502, detail=result.error or "Empty LLM response")

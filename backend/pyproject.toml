@@ -33,6 +33,7 @@ dependencies = [
     "httpx>=0.27",
     "openai>=1.30",
     "anthropic>=0.25",
+    "edge-tts>=7.0",         # free Microsoft TTS, CPU only, no install
 
     # 图像 / 视频处理
     "pillow>=10.3",

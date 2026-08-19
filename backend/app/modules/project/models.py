@@ -70,6 +70,7 @@ class Episode(Base):
     storyboard_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     video_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     final_video_path: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    script_outline: Mapped[str] = mapped_column(Text, default="", nullable=False)  # full narration per shot, JSON string
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
