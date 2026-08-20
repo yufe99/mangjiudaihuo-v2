@@ -139,3 +139,103 @@ class ScriptService:
             base_url=cfg.get("base_url") or None,
             model=cfg.get("model") or None,
         )
+
+    @staticmethod
+    async def generate_for_project(
+        db: AsyncSession,
+        project,
+        user_id: int,
+        provider_name: str = "toapis",
+    ) -> dict:
+        """Generate script for a project. Reusable from run-all pipeline.
+
+        Returns dict with keys: success, data, error, used_provider
+        """
+        from sqlalchemy import select
+        from app.modules.project.models import Episode
+        from app.modules.settings.models import UserSettings
+        from app.providers.base import ProviderRegistry, UserProviderConfig
+        from app.core.log import get_logger
+
+        logger = get_logger(__name__)
+
+        user_settings = (
+            await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+        ).scalar_one_or_none()
+
+        # If user has key for provider_name, use it; else try provider; else fallback to local_preview
+        has_user_key = False
+        if user_settings:
+            cfg = user_settings.get_provider_config(provider_name) or {}
+            if cfg.get("api_key"):
+                has_user_key = True
+
+        provider_name = provider_name  # keep explicit
+        user_config = ScriptService.build_user_config(
+            settings_row=user_settings,
+            provider_name=provider_name,
+            billing_mode=user_settings.billing_mode if user_settings else "byok",
+        )
+
+        system, user_prompt = ScriptService.build_prompt(
+            topic=project.topic,
+            style=project.style,
+            project_type=project.type,
+            episode_count=project.episode_count,
+            seconds_per_episode=project.seconds_per_episode,
+            product_info=project.product_detail or project.product_url,
+        )
+
+        # Try user-configured provider; fallback to local_preview on any failure
+        used_provider = "unknown"
+        try:
+            llm = ProviderRegistry.get_llm(provider_name)
+            result = await llm.generate_text(
+                prompt=user_prompt,
+                system=system,
+                config=user_config,
+                max_tokens=8192,
+                temperature=0.8,
+                response_format={"type": "json_object"},
+            )
+            if not result.success or not result.text:
+                raise ValueError(result.error or "Empty response")
+            used_provider = provider_name
+        except Exception as e:
+            logger.warning(
+                "script_llm_fallback",
+                extra={"provider": provider_name, "error": str(e)},
+            )
+            llm = ProviderRegistry.get_llm("local_preview")
+            result = await llm.generate_text(
+                prompt=user_prompt,
+                system=system,
+                config=None,
+                max_tokens=8192,
+                temperature=0.8,
+                response_format={"type": "json_object"},
+            )
+            used_provider = "local_preview"
+
+        if not result.success or not result.text:
+            return {"success": False, "error": result.error or "Empty response", "used_provider": used_provider}
+
+        try:
+            data = ScriptService.parse_response(result.text)
+        except ValueError as e:
+            return {"success": False, "error": str(e), "used_provider": used_provider}
+
+        # Persist
+        project.script_json = data
+        await db.execute(Episode.__table__.delete().where(Episode.project_id == project.id))
+        for ep in data["episodes"]:
+            db.add(Episode(
+                project_id=project.id,
+                index=ep["index"],
+                title=ep.get("title", ""),
+                outline=ep.get("outline", ""),
+            ))
+        await db.commit()
+        await db.refresh(project)
+
+        return {"success": True, "data": data, "used_provider": used_provider}

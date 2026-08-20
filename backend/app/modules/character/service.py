@@ -201,6 +201,7 @@ class CharacterService:
                 asset_row.error_message = ""
 
             prompt = _build_asset_prompt(asset_data, style=project.style)
+            # Try toapis first; fallback to local_preview on missing key / error
             try:
                 result = await image_provider.generate_image(
                     prompt=prompt,
@@ -209,31 +210,35 @@ class CharacterService:
                     size=size,
                 )
                 if not result.success:
-                    asset_row.status = "failed"
-                    asset_row.error_message = result.error or "image generation failed"
-                    return {
-                        "type": atype,
-                        "name": name,
-                        "status": "failed",
-                        "error": asset_row.error_message,
-                    }
-                asset_row.image_url = result.output_url or ""
-                asset_row.status = "done"
-                return {
-                    "type": atype,
-                    "name": name,
-                    "status": "done",
-                    "image_url": result.output_url,
-                }
+                    raise ValueError(result.error or "image gen failed")
             except Exception as e:
+                logger.warning(
+                    "asset_image_fallback",
+                    extra={"name": name, "error": str(e), "fallback": "local_preview"},
+                )
+                fallback = ProviderRegistry.get_image("local_preview")
+                result = await fallback.generate_image(
+                    prompt=prompt,
+                    size=size,
+                )
+
+            if not result.success:
                 asset_row.status = "failed"
-                asset_row.error_message = str(e)[:200]
+                asset_row.error_message = result.error or "image generation failed"
                 return {
                     "type": atype,
                     "name": name,
                     "status": "failed",
-                    "error": str(e)[:200],
+                    "error": asset_row.error_message,
                 }
+            asset_row.image_url = result.output_url or ""
+            asset_row.status = "done"
+            return {
+                "type": atype,
+                "name": name,
+                "status": "done",
+                "image_url": result.output_url,
+            }
 
         asset_results = []
         for a in assets_data:

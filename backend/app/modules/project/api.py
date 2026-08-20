@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError
 from pydantic import BaseModel, ConfigDict, Field
@@ -128,6 +130,91 @@ async def get_project(
     if not project or project.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Project not found")
     return await _project_to_response(db, project)
+
+
+@router.get("/{project_id}/download/{file_type}")
+async def download_file(
+    project_id: int,
+    file_type: str,  # "project" | "episode-{n}" | "script"
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Download generated file.
+
+    file_type options:
+    - "project": final concatenated project video
+    - "episode-1", "episode-2", ...: per-episode video
+    - "script": the script JSON (LLM-generated or template)
+    """
+    from fastapi.responses import FileResponse, JSONResponse
+    from sqlalchemy import select
+
+    project = await db.get(Project, project_id)
+    if not project or project.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if file_type == "project":
+        if not project.final_video_path:
+            raise HTTPException(status_code=404, detail="Project video not ready yet")
+        path = Path(project.final_video_path)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        return FileResponse(
+            path=str(path), media_type="video/mp4",
+            filename=f"project_{project.id}.mp4",
+        )
+
+    if file_type == "script":
+        if not project.script_json:
+            raise HTTPException(status_code=404, detail="Script not generated yet")
+        return JSONResponse(content=project.script_json)
+
+    if file_type.startswith("episode-"):
+        try:
+            ep_idx = int(file_type.split("-")[1])
+        except (ValueError, IndexError):
+            raise HTTPException(status_code=400, detail="Bad episode index")
+        ep = (
+            await db.execute(
+                select(Episode).where(
+                    Episode.project_id == project.id, Episode.index == ep_idx
+                )
+            )
+        ).scalar_one_or_none()
+        if not ep:
+            raise HTTPException(status_code=404, detail=f"Episode {ep_idx} not found")
+        if not ep.final_video_path:
+            raise HTTPException(status_code=404, detail=f"Episode {ep_idx} video not ready yet")
+        path = Path(ep.final_video_path)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        return FileResponse(
+            path=str(path), media_type="video/mp4",
+            filename=f"episode_{ep_idx}.mp4",
+        )
+
+    raise HTTPException(status_code=400, detail=f"Unknown file_type: {file_type}")
+
+
+@router.post("/{project_id}/run-all")
+async def run_all_pipeline(
+    project_id: int,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """One-click full pipeline: ①剧本 → ②角色 → ③分镜 → ③视频 → 配音 → ④合成.
+
+    这是给带货场景用的"一键跑通"接口 —— 不需要用户手动调 9 个端点。
+    有 key 走真 AI,无 key 走 local_preview 演示模式。
+    """
+    from app.modules.product.run_all import RunAllService
+
+    project = await db.get(Project, project_id)
+    if not project or project.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    result = await RunAllService.run_full_pipeline(db, project)
+    return result
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
