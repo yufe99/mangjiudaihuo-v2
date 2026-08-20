@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./data/app.db"
 
     # ===== CORS =====
-    cors_origins: str = "http://localhost:3000,http://localhost:7860"
+    # 开发阶段允许所有来源(tunnel/本地/IP 都能访问),上线前收紧
+    cors_origins: str = "*"
 
     # ===== Storage =====
     storage_backend: Literal["local", "s3", "r2"] = "local"
