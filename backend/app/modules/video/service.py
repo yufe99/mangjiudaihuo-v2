@@ -30,11 +30,11 @@ logger = get_logger(__name__)
 
 
 def _resolve_configs(settings_row: UserSettings | None) -> dict:
-    cfg = settings_row.get_provider_config("toapis") if settings_row else {}
+    cfg = settings_row.get_provider_config("geeknow") if settings_row else {}
     common = dict(api_key=cfg.get("api_key") or None, base_url=cfg.get("base_url") or None)
     return {
         "user_config": UserProviderConfig(
-            provider_name="toapis",
+            provider_name="geeknow",
             api_key=common["api_key"],
             base_url=common["base_url"],
             model=cfg.get("model") or None,
@@ -104,12 +104,12 @@ class VideoService:
         user_config = configs["user_config"]
 
         try:
-            image_provider: ImageProvider = ProviderRegistry.get_image("toapis")
+            image_provider: ImageProvider = ProviderRegistry.get_image("geeknow_image")
         except Exception:
             image_provider = ProviderRegistry.get_image("local_preview")
 
         try:
-            video_provider: VideoProvider = ProviderRegistry.get_video("toapis")
+            video_provider: VideoProvider = ProviderRegistry.get_video("geeknow")
         except Exception:
             video_provider = ProviderRegistry.get_video("local_preview")
 

@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     platform_toapis_base_url: str = "https://toapis.com/v1"
     platform_yijia_api_key: str = ""
     platform_yijia_base_url: str = "https://ai.yijiarj.cn/v1"
+    # geeknow.top - OpenAI 兼容全能网关(文本/图像/视频通用)
+    platform_geeknow_api_key: str = "sk-5H1N01c8efC7YhCUBebH9sighGFfTjhdcXDcKR3vaGs6MAOO"
+    platform_geeknow_base_url: str = "https://api.geeknow.top/v1"
+    # Default LLM model on geeknow (gpt-5.6-sol 通且快;gpt-5-minimal 30s 超时不稳定)
+    default_text_model: str = "gpt-5.6-sol"
+    default_image_model: str = "gpt-image-2"
+    default_video_model: str = "doubao-seedance-2-0-fast-260128"
 
     @field_validator("cors_origins")
     @classmethod

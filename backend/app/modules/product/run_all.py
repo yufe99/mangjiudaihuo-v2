@@ -41,7 +41,7 @@ class RunAllService:
 
         # ① Script
         script_result = await ScriptService.generate_for_project(
-            db, project, user_id=project.owner_id, provider_name="toapis"
+            db, project, user_id=project.owner_id, provider_name="geeknow"
         )
         if not script_result.get("success"):
             return {"error": f"①剧本失败:{script_result.get('error')}", "used_provider": script_result.get("used_provider")}

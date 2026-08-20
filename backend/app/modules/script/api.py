@@ -53,7 +53,7 @@ async def generate_script(
     # Actually: provider name comes from settings / first available
     from app.core.config import settings as app_settings
 
-    provider_name = "toapis"  # default for v2
+    provider_name = "geeknow"  # default for v2 (platform key in config)
 
     billing_mode = user_settings.billing_mode if user_settings else "byok"
 

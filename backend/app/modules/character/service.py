@@ -56,7 +56,7 @@ def _build_asset_prompt(asset: dict, style: str = "") -> str:
 
 def _resolve_image_config(settings_row: UserSettings | None) -> tuple[str, UserProviderConfig]:
     """Pick the image provider + user config. Hardcode toapis as default."""
-    provider_name = "toapis"
+    provider_name = "geeknow_image"  # 用 images/generations 端点
     cfg = settings_row.get_provider_config("toapis") if settings_row else {}
     user_config = UserProviderConfig(
         provider_name=provider_name,

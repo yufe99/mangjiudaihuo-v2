@@ -39,7 +39,7 @@ class OpenAICompatLLMProvider(LLMProvider):
         if not key:
             raise ProviderError(self.name, "Missing API key")
 
-        used_model = model or (config.model if config and config.model else "gpt-4o-mini")
+        used_model = model or (config.model if config and config.model else None) or "gpt-5.6-sol"
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})

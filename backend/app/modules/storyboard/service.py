@@ -138,9 +138,9 @@ class StoryboardService:
             )
         ).scalar_one_or_none()
         # Treat missing settings as empty; user can configure later
-        cfg = user_settings.get_provider_config("toapis") if user_settings else {}
+        cfg = user_settings.get_provider_config("geeknow") if user_settings else {}
         user_config = UserProviderConfig(
-            provider_name="toapis",
+            provider_name="geeknow",
             api_key=cfg.get("api_key") or None,
             base_url=cfg.get("base_url") or None,
             model=cfg.get("model") or None,
@@ -157,7 +157,7 @@ class StoryboardService:
             character_names=character_names,
         )
         try:
-            llm = ProviderRegistry.get_llm("toapis")
+            llm = ProviderRegistry.get_llm("geeknow")
             result = await llm.generate_text(
                 prompt=user_prompt,
                 system=system,
