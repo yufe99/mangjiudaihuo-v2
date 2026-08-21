@@ -26,7 +26,7 @@ class FromManualRequest(BaseModel):
         default="美妆时尚", description="风格:美妆时尚/家居好物/数码电子/食品饮料/..."
     )
     episode_count: int = Field(default=5, ge=2, le=10, description="集数(2-10)")
-    seconds_per_episode: int = Field(default=10, ge=5, le=30, description="每集秒数(5-30)")
+    seconds_per_episode: int = Field(default=15, ge=5, le=30, description="每集秒数(5-30)")
 
 
 class FromManualResponse(BaseModel):

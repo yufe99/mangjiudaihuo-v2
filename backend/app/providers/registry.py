@@ -8,6 +8,7 @@ from __future__ import annotations
 from app.providers.base import ProviderRegistry
 from app.core.config import settings
 from app.providers.edge_tts import EdgeTTSProvider
+from app.providers.fdai import FdaiImageProvider, FdaiVideoProvider
 from app.providers.geeknow_image import GeeknowImageProvider
 from app.providers.local_preview import (
     LocalPreviewImageProvider,
@@ -64,6 +65,7 @@ def register_all_providers() -> None:
     ProviderRegistry.register_video("302", ToapisVideoProvider)
     ProviderRegistry.register_video("openai_compat", OpenAICompatVideoProvider)
     ProviderRegistry.register_video("geeknow", _make_geeknow_provider(OpenAICompatVideoProvider))
+    ProviderRegistry.register_video("fdai", FdaiVideoProvider)  # 异步任务式视频生成
     ProviderRegistry.register_video("local_preview", LocalPreviewVideoProvider)
 
     # TTS

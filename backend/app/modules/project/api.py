@@ -196,25 +196,202 @@ async def download_file(
     raise HTTPException(status_code=400, detail=f"Unknown file_type: {file_type}")
 
 
-@router.post("/{project_id}/run-all")
-async def run_all_pipeline(
+@router.post("/{project_id}/approve/{step}")
+async def approve_step(
     project_id: int,
+    step: str,  # "script" | "characters" | "storyboard"
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    """One-click full pipeline: ①剧本 → ②角色 → ③分镜 → ③视频 → 配音 → ④合成.
+    """Mark a pipeline step as approved.
 
-    这是给带货场景用的"一键跑通"接口 —— 不需要用户手动调 9 个端点。
-    有 key 走真 AI,无 key 走 local_preview 演示模式。
+    Frontend workflow:
+      ① 生成剧本 → 显示剧本 → 用户审核 → [通过] → 调本端点
+      ② 生成角色/资产 → 显示 → 用户审核 → [通过] → 调本端点
+      ③ 生成集1分镜 → 显示 → 用户审核 → [通过] → 调本端点
+
+    step ∈ "script" | "characters" | "storyboard"
+    (视频/配音/合成的审核按集,在 episode scope 下做)
     """
-    from app.modules.product.run_all import RunAllService
+    from app.modules.approval import approve, persist
 
     project = await db.get(Project, project_id)
     if not project or project.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    result = await RunAllService.run_full_pipeline(db, project)
-    return result
+    if step not in ("script", "characters", "storyboard"):
+        raise HTTPException(status_code=400, detail=f"Unknown step: {step}")
+
+    # Validate that the step's content actually exists before allowing approval
+    if step == "script" and not project.script_json:
+        raise HTTPException(status_code=400, detail="剧本还没生成,无法审核")
+    if step == "characters":
+        # at least one character must have a done status
+        from app.modules.character.models import Character
+        from sqlalchemy import select
+        chars = (
+            await db.execute(
+                select(Character).where(Character.project_id == project_id)
+            )
+        ).scalars().all()
+        if not chars:
+            raise HTTPException(status_code=400, detail="角色还没生成,无法审核")
+        if not all(c.status == "done" for c in chars):
+            bad = [c.name for c in chars if c.status != "done"]
+            raise HTTPException(
+                status_code=400,
+                detail=f"有角色未生成完成:{','.join(bad)}",
+            )
+    if step == "storyboard":
+        from sqlalchemy import select
+        from app.modules.storyboard.models import Storyboard
+        from app.modules.project.models import Episode
+        eps = (
+            await db.execute(
+                select(Episode).where(Episode.project_id == project_id)
+            )
+        ).scalars().all()
+        if not eps:
+            raise HTTPException(status_code=400, detail="项目没有剧集")
+        has_shot = False
+        for ep in eps:
+            sb = (
+                await db.execute(
+                    select(Storyboard).where(Storyboard.episode_id == ep.id)
+                )
+            ).scalars().all()
+            if sb:
+                has_shot = True
+        if not has_shot:
+            raise HTTPException(
+                status_code=400,
+                detail="还没生成分镜",
+            )
+
+    approve(project, step)
+    await persist(db, project)
+
+    return {"status": "approved", "step": step, "approved_at": now_iso()}
+
+
+def now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+@router.post("/{project_id}/unapprove/{step}")
+async def unapprove_step(
+    project_id: int,
+    step: str,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """Un-approve a step (allows regenerating)."""
+    from app.modules.approval import disapprove
+
+    project = await db.get(Project, project_id)
+    if not project or project.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if step not in ("script", "characters", "storyboard"):
+        raise HTTPException(status_code=400, detail=f"Unknown step: {step}")
+    disapprove(project, step)
+    await db.commit()
+    return {"status": "unapproved", "step": step}
+
+
+@router.get("/{project_id}/approvals")
+async def get_approvals(
+    project_id: int,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """Return all step approvals for the project + per-episode approvals."""
+    from app.modules.approval import build_approvals_view
+    from app.modules.project.models import Episode
+
+    project = await db.get(Project, project_id)
+    if not project or project.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    base = build_approvals_view(project)
+
+    # Per-episode approvals: stored in episode.script_outline (or a separate field)
+    eps = (
+        await db.execute(
+            select(Episode).where(Episode.project_id == project_id)
+        )
+    ).scalars().all()
+    base["episodes"] = {
+        ep.index: {
+            "video": ep.video_status,
+            "final_video": ep.final_video_path,
+            "script_outline": ep.script_outline,
+        }
+        for ep in eps
+    }
+    return base
+
+
+@router.post("/{project_id}/episodes/{episode_id}/approve/{step}")
+async def approve_episode_step(
+    project_id: int,
+    episode_id: int,
+    step: str,  # "video" | "tts" | "compose"
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """Approve a per-episode step (video/tts/compose).
+
+    video: 所有分镜都生成完成 + 视频下载就绪
+    tts: TTS 配音生成完成
+    compose: 合成 MP4 生成完成
+    """
+    from datetime import datetime, timezone
+    from app.modules.project.models import Episode
+
+    episode = await db.get(Episode, episode_id)
+    if not episode or episode.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    project = await db.get(Project, episode.project_id)
+    if not project or project.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Episode not found")
+
+    if step not in ("video", "tts", "compose"):
+        raise HTTPException(status_code=400, detail=f"Unknown step: {step}")
+
+    # Validate prerequisite
+    if step == "video":
+        from app.modules.storyboard.models import Storyboard
+        sb = (
+            await db.execute(
+                select(Storyboard).where(Storyboard.episode_id == episode_id)
+            )
+        ).scalars().all()
+        if not sb:
+            raise HTTPException(status_code=400, detail="EP 没有分镜")
+        missing = [s.index for s in sb if not s.video_path]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"分镜 {missing} 还没生成视频",
+            )
+    elif step == "compose":
+        if not episode.final_video_path:
+            raise HTTPException(status_code=400, detail="EP 没合成最终视频")
+
+    # Store approval in episode.script_outline as JSON
+    import json
+    outline = {}
+    try:
+        outline = json.loads(episode.script_outline or "{}")
+    except Exception:
+        pass
+    outline[f"approved_{step}_at"] = datetime.now(timezone.utc).isoformat()
+    episode.script_outline = json.dumps(outline, ensure_ascii=False)
+    await db.commit()
+
+    return {"status": "approved", "episode_id": episode_id, "step": step}
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)

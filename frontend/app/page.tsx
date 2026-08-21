@@ -50,7 +50,7 @@ export default function HomePage() {
     target_audience: "",
     style: "美妆时尚",
     episode_count: 3,
-    seconds_per_episode: 8,
+    seconds_per_episode: 15,
   });
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<string>("");

@@ -27,8 +27,18 @@ def _ensure_sqlite_dir(url: str) -> None:
 # Ensure SQLite parent dir exists before engine creation
 _ensure_sqlite_dir(settings.database_url)
 
+
+def _make_sqlite_url(url: str) -> str:
+    """Append WAL mode + busy_timeout to SQLite URLs to avoid 'database is locked'."""
+    if not url.startswith("sqlite"):
+        return url
+    # Strip any prior params and re-append with our settings
+    base = url.split("?")[0]
+    return f"{base}?journal_mode=WAL&synchronous=NORMAL&busy_timeout=30000"
+
+
 engine = create_async_engine(
-    settings.database_url,
+    _make_sqlite_url(settings.database_url),
     echo=settings.app_debug,
     future=True,
 )
@@ -42,11 +52,18 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency: yields a session, commits/rolls back on exit."""
+    """FastAPI dependency: yields a session, commits/rolls back on exit.
+
+    Note: We DON'T commit here if router already committed (would cause
+    'readonly database' under aiosqlite due to stale lock).
+    Routers should call await session.commit() explicitly when needed.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
+            # Only commit if there's pending work (not yet committed)
+            if session.in_transaction():
+                await session.commit()
         except Exception:
             await session.rollback()
             raise

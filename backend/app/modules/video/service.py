@@ -109,9 +109,11 @@ class VideoService:
             image_provider = ProviderRegistry.get_image("local_preview")
 
         try:
-            video_provider: VideoProvider = ProviderRegistry.get_video("geeknow")
+            video_provider: VideoProvider = ProviderRegistry.get_video("fdai")
         except Exception:
             video_provider = ProviderRegistry.get_video("local_preview")
+        # 临时:本地 preview 兜底优先,因为 fdai video 当前 key group 不支持,直接走兜底
+        video_provider = ProviderRegistry.get_video("local_preview")
 
         # Pull character anchors (for reference_images)
         shot = next(

@@ -23,7 +23,7 @@ class ProductService:
         target_audience: str = "",
         style: str = "美妆时尚",
         episode_count: int = 5,
-        seconds_per_episode: int = 10,
+        seconds_per_episode: int = 15,
     ) -> Project:
         """Create a 带货 project + episodes from manual product info."""
         topic_parts = [f"带货商品:{name}"]

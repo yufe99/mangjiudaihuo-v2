@@ -83,10 +83,17 @@ class Settings(BaseSettings):
     # geeknow.top - OpenAI 兼容全能网关(文本/图像/视频通用)
     platform_geeknow_api_key: str = "sk-5H1N01c8efC7YhCUBebH9sighGFfTjhdcXDcKR3vaGs6MAOO"
     platform_geeknow_base_url: str = "https://api.geeknow.top/v1"
+    # fdai.xyz (text/image/video); 当前 key group=mini_max1 无可用模型
+    # 如果你换了有权限的 key,把这个改掉就行
+    platform_fdai_api_key: str = "sk-4dyNdKr7wsHzf44WGfzdhCFD11C2iKn0TIpxSQftF9nAzKp6"
+    platform_fdai_base_url: str = "https://apinocf.fdai.xyz/v1"
     # Default LLM model on geeknow (gpt-5.6-sol 通且快;gpt-5-minimal 30s 超时不稳定)
     default_text_model: str = "gpt-5.6-sol"
     default_image_model: str = "gpt-image-2"
-    default_video_model: str = "doubao-seedance-2-0-fast-260128"
+    # fdai 视频模型: minimax_h3-768p (Hailuo, 768p, fdai 上限 15 秒)
+    default_video_model: str = "minimax_h3-768p"
+    # 一集视频时长(秒),fdai 上限 15 秒
+    default_episode_seconds: int = 15
 
     @field_validator("cors_origins")
     @classmethod
